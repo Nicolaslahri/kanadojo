@@ -15,6 +15,14 @@ afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force
 const card = (updated: number, box: number) => ({ char: 'あ', skill: 'read', box, due: 0, correct: box, wrong: 0, updated });
 
 describe('sync API', () => {
+  it('counts mix-ups from wrong answers', async () => {
+    const app = await buildApp({ dataDir: tempDir() });
+    const r = (id: string, correct: boolean, picked?: string) => ({ id, char: 'ぬ', skill: 'read', correct, mode: 'test', at: 1, day: '2026-01-01', picked });
+    const res = await app.inject({ method: 'POST', url: '/api/sync', payload: { reviews: [r('a', false, 'め'), r('b', false, 'め'), r('c', true), r('d', false)] } });
+    expect(res.json().confusions).toEqual({ 'ぬ|め': 2 });
+    await app.close();
+  });
+
   it('round-trips progress and keeps the newest card', async () => {
     const dataDir = tempDir();
     const app = await buildApp({ dataDir });

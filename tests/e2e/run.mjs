@@ -46,9 +46,24 @@ async function draw(char, { offset = 0 } = {}) {
   }
 }
 
-/** Answers whatever quiz question is on screen correctly. */
-async function answerQuestion() {
+/** Answers whatever quiz question is on screen, correctly unless `wrong` is set. */
+async function answerQuestion({ wrong = false } = {}) {
   const label = await page.locator('.prompt .label').first().textContent();
+  const other = (r) => Object.values(ROMAJI).find((x) => x !== r);
+  if (label.startsWith('Type how you read')) {
+    const glyph = (await page.locator('.prompt .glyph').textContent()).trim();
+    await page.locator('.typed-answer input').fill(wrong ? other(ROMAJI[glyph]) : ROMAJI[glyph]);
+    await page.locator('.typed-answer input').press('Enter');
+    await page.waitForTimeout(900);
+    return;
+  }
+  if (label.startsWith('Read this word')) {
+    // Lesson 1 words use only the vowels.
+    const word = (await page.locator('.word-prompt').textContent()).trim();
+    await page.locator('.option', { hasText: new RegExp(`^${[...word].map((c) => ROMAJI[c]).join('')}$`) }).click();
+    await page.waitForTimeout(900);
+    return;
+  }
   if (label.startsWith('Write')) {
     const romaji = (await page.locator('.romaji-prompt').textContent()).trim();
     await draw(CHAR_OF[romaji]);
@@ -58,10 +73,11 @@ async function answerQuestion() {
   }
   if (label.startsWith('How do you read')) {
     const glyph = (await page.locator('.prompt .glyph').textContent()).trim();
-    await page.locator('.option', { hasText: new RegExp(`^${ROMAJI[glyph]}$`) }).click();
+    const opts = page.locator('.option', { hasText: new RegExp(`^${ROMAJI[glyph]}$`) });
+    await (wrong ? page.locator('.option').filter({ hasNot: opts }).filter({ hasNotText: new RegExp(`^${ROMAJI[glyph]}$`) }).first() : opts).click();
   } else {
     const romaji = (await page.locator('.romaji-prompt').textContent()).trim();
-    await page.locator('.option', { hasText: CHAR_OF[romaji] }).click();
+    await (wrong ? page.locator('.option').filter({ hasNotText: CHAR_OF[romaji] }).first() : page.locator('.option', { hasText: CHAR_OF[romaji] })).click();
   }
   await page.waitForTimeout(900);
 }
@@ -71,12 +87,24 @@ try {
   await page.waitForSelector('text=Kana Dojo');
   await shot('01-home-new');
 
-  // Lesson 1: the vowels.
+  // Lesson 1: the vowels, on the default fast track (reading only).
   await page.getByRole('link', { name: 'Start lesson 1' }).click();
   for (const char of Object.keys(ROMAJI)) {
     await page.waitForSelector('.mnemonic');
     if (char === 'あ') await shot('02-lesson-meet');
-    await page.getByRole('button', { name: 'Next: how to write it' }).click();
+    await page.getByRole('button', { name: char === 'お' ? 'Start quiz' : 'Next', exact: true }).click();
+  }
+  await page.waitForSelector('.options');
+  await shot('06-lesson-quiz');
+  while (await page.locator('.prompt').count()) await answerQuestion();
+  await page.waitForSelector('text=Vowels complete!');
+  await shot('07-lesson-done');
+
+  // Writing pass for the same lesson.
+  await page.goto(`${base}/#/learn`);
+  await page.getByRole('link', { name: 'Writing pass for Vowels' }).click();
+  for (const char of Object.keys(ROMAJI)) {
+    await page.waitForSelector('text=Watch the strokes');
     if (char === 'あ') { await page.waitForTimeout(2600); await shot('03-lesson-watch'); }
     await page.getByRole('button', { name: 'Got it — let me trace' }).click();
     await draw(char);
@@ -87,13 +115,9 @@ try {
     await page.waitForSelector('.score-badge');
     if (char === 'あ') await shot('05-lesson-draw-result');
     assert(!(await page.locator('.score-badge.bad').count()), `drawing ${char} should pass`);
-    await page.getByRole('button', { name: char === 'お' ? 'Start quiz' : 'Next kana' }).click();
+    await page.getByRole('button', { name: char === 'お' ? 'Finish' : 'Next kana' }).click();
   }
-  await page.waitForSelector('.options');
-  await shot('06-lesson-quiz');
-  while (await page.locator('.prompt').count()) await answerQuestion();
-  await page.waitForSelector('text=Vowels complete!');
-  await shot('07-lesson-done');
+  await page.waitForSelector('text=Writing pass done');
 
   // Daily test.
   await page.goto(`${base}/#/test`);
@@ -122,6 +146,28 @@ try {
     await page.waitForTimeout(500);
     await shot(name);
   }
+
+  // A deliberate miss comes back in the same session and shows up as a personal mix-up.
+  await page.goto(`${base}/#/practice/quiz`);
+  await page.waitForSelector('.prompt');
+  await answerQuestion({ wrong: true });
+  await page.waitForSelector('text=again in a moment');
+  await shot('20-retry-feedback');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  while (await page.locator('.prompt').count()) {
+    if (await page.locator('.retry-tag').count()) await shot('21-retry-question');
+    await answerQuestion();
+  }
+  await page.waitForSelector('text=fixed on the second try');
+  await shot('22-practice-results');
+  await page.waitForTimeout(2000);
+  await page.goto(`${base}/#/practice/mixups`);
+  await page.waitForSelector('.prompt');
+  await shot('23-mixups');
+
+  await page.goto(`${base}/#/kana/%E3%82%AB`);
+  await page.waitForSelector('.twin');
+  await shot('24-katakana-twin');
 
   await page.goto(`${base}/#/practice/lookalike`);
   await page.waitForTimeout(300);

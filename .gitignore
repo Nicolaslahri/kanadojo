@@ -1,7 +1,7 @@
 node_modules/
 dist/
 server/dist/
-data/
+/data/
 scripts/.cache/
 tests/e2e/screenshots/
 *.log

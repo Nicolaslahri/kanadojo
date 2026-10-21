@@ -94,5 +94,6 @@ for (const c of chars) {
   result[c] = paths.map((d) => ({ d, pts: resample(flatten(d), SAMPLES) }));
 }
 
+await mkdir(dirname(outFile), { recursive: true });
 await writeFile(outFile, JSON.stringify(result));
 console.log(`wrote ${Object.keys(result).length} characters to ${outFile}`);

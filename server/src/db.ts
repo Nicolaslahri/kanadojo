@@ -20,6 +20,8 @@ export interface ReviewIn {
   mode: string;
   at: number;
   day: string;
+  /** The wrong character that was picked or typed, for the confusion drill. */
+  picked?: string | null;
 }
 
 export interface TestIn {
@@ -62,10 +64,12 @@ export function openDb(dataDir: string) {
     CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, json TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `);
+  const reviewCols = db.prepare(`PRAGMA table_info(reviews)`).all() as { name: string }[];
+  if (!reviewCols.some((c) => c.name === 'picked')) db.exec('ALTER TABLE reviews ADD COLUMN picked TEXT');
 
   const q = {
-    insertReview: db.prepare(`INSERT OR IGNORE INTO reviews (id, char, skill, correct, mode, at, day)
-      VALUES (@id, @char, @skill, @correct, @mode, @at, @day)`),
+    insertReview: db.prepare(`INSERT OR IGNORE INTO reviews (id, char, skill, correct, mode, at, day, picked)
+      VALUES (@id, @char, @skill, @correct, @mode, @at, @day, @picked)`),
     upsertCard: db.prepare(`INSERT INTO cards (char, skill, box, due, correct, wrong, updated)
       VALUES (@char, @skill, @box, @due, @correct, @wrong, @updated)
       ON CONFLICT (char, skill) DO UPDATE SET box = excluded.box, due = excluded.due, correct = excluded.correct,
@@ -82,6 +86,8 @@ export function openDb(dataDir: string) {
     settings: db.prepare(`SELECT json, updated FROM settings WHERE id = 1`),
     activity: db.prepare(`SELECT day, COUNT(*) AS n, SUM(correct) AS correct FROM reviews GROUP BY day ORDER BY day DESC LIMIT 400`),
     skillStats: db.prepare(`SELECT skill, COUNT(*) AS n, SUM(correct) AS correct FROM reviews GROUP BY skill`),
+    confusions: db.prepare(`SELECT char, picked, COUNT(*) AS n FROM reviews
+      WHERE correct = 0 AND picked IS NOT NULL GROUP BY char, picked`),
     hasTest: db.prepare(`SELECT 1 FROM daily_tests WHERE day = ?`),
     getMeta: db.prepare(`SELECT value FROM meta WHERE key = ?`),
     setMeta: db.prepare(`INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`),
@@ -92,7 +98,7 @@ export function openDb(dataDir: string) {
 
   const sync = db.transaction((input: SyncIn) => {
     for (const r of input.reviews ?? []) {
-      q.insertReview.run({ ...r, correct: r.correct ? 1 : 0 });
+      q.insertReview.run({ ...r, correct: r.correct ? 1 : 0, picked: r.picked ?? null });
     }
     for (const c of input.cards ?? []) q.upsertCard.run(c);
     for (const [char, at] of Object.entries(input.learned ?? {})) q.insertLearned.run(char, at);
@@ -112,6 +118,10 @@ export function openDb(dataDir: string) {
     for (const r of q.skillStats.all() as { skill: string; n: number; correct: number }[]) {
       skillStats[r.skill] = { n: r.n, correct: r.correct };
     }
+    const confusions: Record<string, number> = {};
+    for (const r of q.confusions.all() as { char: string; picked: string; n: number }[]) {
+      confusions[`${r.char}|${r.picked}`] = r.n;
+    }
     return {
       cards: q.cards.all() as CardRow[],
       learned: Object.fromEntries((q.learned.all() as { char: string; at: number }[]).map((r) => [r.char, r.at])),
@@ -120,6 +130,7 @@ export function openDb(dataDir: string) {
       settings: settingsRow ? { value: JSON.parse(settingsRow.json), updated: settingsRow.updated } : null,
       activity,
       skillStats,
+      confusions,
       serverTime: Date.now(),
     };
   }

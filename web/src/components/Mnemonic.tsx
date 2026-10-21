@@ -1,4 +1,5 @@
 import { KANA_BY_CHAR } from '../data/kana';
+import { hiraganaTwin, looksLikeTwin } from '../lib/twins';
 
 /** The character over its picture, with the hook word and story. */
 export function Mnemonic({ char, showRomaji = true }: { char: string; showRomaji?: boolean }) {
@@ -16,7 +17,23 @@ export function Mnemonic({ char, showRomaji = true }: { char: string; showRomaji
         </p>
       )}
       {k.story && <p className="story">{k.story}</p>}
+      <Twin char={char} />
     </div>
+  );
+}
+
+/** Katakana are taught through the hiragana you already know: same sound, often a similar shape. */
+function Twin({ char }: { char: string }) {
+  const twin = hiraganaTwin(char);
+  if (!twin) return null;
+  return (
+    <p className="twin">
+      <span className="kana">{twin}</span>
+      <span>
+        Same sound as hiragana <b className="kana">{twin}</b>
+        {looksLikeTwin(char) ? ' and almost the same shape. You already know this one!' : '.'}
+      </span>
+    </p>
   );
 }
 

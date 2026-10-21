@@ -9,6 +9,10 @@ export interface Settings {
   theme: 'auto' | 'light' | 'dark';
   haptics: boolean;
   unlockAll: boolean;
+  /** Type the romaji for kana you've already met, instead of picking from four options. */
+  typing: boolean;
+  /** Lessons teach reading only; writing is its own pass later. */
+  fastTrack: boolean;
   reminder: { enabled: boolean; time: string; tz: string };
 }
 
@@ -20,6 +24,7 @@ export interface Review {
   mode: string;
   at: number;
   day: string;
+  picked?: string;
 }
 
 export interface TestResult {
@@ -39,6 +44,8 @@ export interface State {
   /** Reviews per local day, from the server plus anything not yet synced. */
   activity: Tally;
   skillStats: Tally;
+  /** How often each kana was mistaken for another, keyed "answer|picked". */
+  confusions: Record<string, number>;
   settings: Settings;
   settingsUpdated: number;
   pendingReviews: Review[];
@@ -56,11 +63,13 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'auto',
   haptics: true,
   unlockAll: false,
+  typing: true,
+  fastTrack: true,
   reminder: { enabled: false, time: '19:00', tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
 };
 
 const empty = (): State => ({
-  cards: {}, learned: {}, tests: {}, activity: {}, skillStats: {},
+  cards: {}, learned: {}, tests: {}, activity: {}, skillStats: {}, confusions: {},
   settings: DEFAULT_SETTINGS, settingsUpdated: 0,
   pendingReviews: [], dirtyCards: [], syncStatus: 'idle', lastSync: 0,
 });
@@ -118,20 +127,26 @@ function bump(t: Tally, key: string, correct: boolean): Tally {
   return { ...t, [key]: { n: cur.n + 1, correct: cur.correct + (correct ? 1 : 0) } };
 }
 
-export function recordAnswer(char: string, skill: Skill, correct: boolean, mode: string) {
+const addConfusion = (c: Record<string, number>, char: string, picked?: string) =>
+  (picked ? { ...c, [`${char}|${picked}`]: (c[`${char}|${picked}`] ?? 0) + 1 } : c);
+
+export function recordAnswer(char: string, skill: Skill, correct: boolean, mode: string, opts: { slow?: boolean; picked?: string } = {}) {
   const now = Date.now();
   const key = cardKey(char, skill);
   const day = dayKey(now);
+  const picked = correct || opts.picked === char ? undefined : opts.picked;
   setState((s) => ({
-    cards: { ...s.cards, [key]: review(s.cards[key] ?? newCard(char, skill, now), correct, now) },
+    cards: { ...s.cards, [key]: review(s.cards[key] ?? newCard(char, skill, now), correct, now, opts.slow) },
     dirtyCards: s.dirtyCards.includes(key) ? s.dirtyCards : [...s.dirtyCards, key],
-    pendingReviews: [...s.pendingReviews, { id: uid(), char, skill, correct, mode, at: now, day }],
+    pendingReviews: [...s.pendingReviews, { id: uid(), char, skill, correct, mode, at: now, day, ...(picked ? { picked } : {}) }],
     activity: bump(s.activity, day, correct),
     skillStats: bump(s.skillStats, skill, correct),
+    confusions: addConfusion(s.confusions, char, picked),
   }));
 }
 
-export function markLearned(chars: string[]) {
+/** With `skipWriting`, writing cards are only created once you start the writing pass. */
+export function markLearned(chars: string[], { skipWriting = false } = {}) {
   const now = Date.now();
   setState((s) => {
     const cards = { ...s.cards };
@@ -140,6 +155,7 @@ export function markLearned(chars: string[]) {
     for (const c of chars) {
       learned[c] ??= now;
       for (const skill of skillsFor(KANA_BY_CHAR[c])) {
+        if (skipWriting && skill === 'write') continue;
         const key = cardKey(c, skill);
         if (!cards[key]) {
           cards[key] = newCard(c, skill, now);
@@ -168,6 +184,7 @@ interface ServerState {
   settings: { value: Partial<Settings>; updated: number } | null;
   activity: Tally;
   skillStats: Tally;
+  confusions?: Record<string, number>;
 }
 
 let syncing: Promise<void> | null = null;
@@ -188,9 +205,11 @@ function applyServer(server: ServerState, startedAt: number, sentIds: Set<string
     const pendingReviews = s.pendingReviews.filter((r) => !sentIds.has(r.id));
     let activity = server.activity;
     let skillStats = server.skillStats;
+    let confusions = server.confusions ?? {};
     for (const r of pendingReviews) {
       activity = bump(activity, r.day, r.correct);
       skillStats = bump(skillStats, r.skill, r.correct);
+      confusions = addConfusion(confusions, r.char, r.picked);
     }
     const serverSettingsNewer = server.settings && server.settings.updated > s.settingsUpdated;
     return {
@@ -199,6 +218,7 @@ function applyServer(server: ServerState, startedAt: number, sentIds: Set<string
       tests: { ...s.tests, ...server.tests },
       activity,
       skillStats,
+      confusions,
       pendingReviews,
       dirtyCards: stillDirty,
       settings: serverSettingsNewer ? { ...DEFAULT_SETTINGS, ...server.settings!.value } : s.settings,
@@ -262,7 +282,7 @@ export async function resetProgress(): Promise<boolean> {
   const res = await fetch('/api/reset', { method: 'POST' }).catch(() => null);
   if (!res?.ok) return false;
   setState(() => ({
-    cards: {}, learned: {}, tests: {}, activity: {}, skillStats: {}, pendingReviews: [], dirtyCards: [],
+    cards: {}, learned: {}, tests: {}, activity: {}, skillStats: {}, confusions: {}, pendingReviews: [], dirtyCards: [],
   }), { sync: false });
   return true;
 }
