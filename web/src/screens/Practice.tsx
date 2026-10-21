@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { KANA, KANA_BY_CHAR, type Script } from '../data/kana';
 import { WORDS } from '../data/words';
 import {
-  buildLookalikeQuiz, buildQuestion, buildWordQuestion, shuffle, wordsFor, type Question,
+  buildConfusionQuiz, buildLookalikeQuiz, buildQuestion, buildWordQuestion, shuffle, wordsFor, type Question,
 } from '../lib/questions';
 import { isDue, skillsFor, type Skill } from '../lib/srs';
 import { recordAnswer, useStore } from '../lib/store';
@@ -11,7 +11,7 @@ import { useSpeaker } from '../components/Audio';
 import { Quiz, Results, type Answer } from '../components/Quiz';
 import { Mnemonic } from '../components/Mnemonic';
 
-type Mode = 'review' | 'quiz' | 'flash' | 'listen' | 'write' | 'words' | 'lookalike' | 'speed';
+type Mode = 'review' | 'quiz' | 'flash' | 'listen' | 'write' | 'words' | 'lookalike' | 'mixups' | 'speed';
 
 const MODES: { id: Mode; emoji: string; title: string; desc: string }[] = [
   { id: 'review', emoji: '⏰', title: 'Due reviews', desc: 'Everything the schedule says you should see now' },
@@ -20,6 +20,7 @@ const MODES: { id: Mode; emoji: string; title: string; desc: string }[] = [
   { id: 'listen', emoji: '👂', title: 'Listening', desc: 'Hear it, pick the kana' },
   { id: 'write', emoji: '✍️', title: 'Writing', desc: 'Draw from memory and get graded' },
   { id: 'words', emoji: '📖', title: 'Read words', desc: 'Real words made of kana you know' },
+  { id: 'mixups', emoji: '🔀', title: 'My mix-ups', desc: 'The pairs you personally confuse most' },
   { id: 'lookalike', emoji: '👯', title: 'Look-alikes', desc: 'シ/ツ, ソ/ン, ぬ/め and friends' },
   { id: 'speed', emoji: '⚡', title: 'Speed round', desc: 'As many as you can in 60 seconds' },
 ];
@@ -43,18 +44,19 @@ export function Practice({ mode }: { mode?: Mode }) {
     const known = new Set(pool);
     const pick = (skills: Skill[], n = SIZE) => shuffle(pool).slice(0, n).map((c) => {
       const options = skills.filter((sk) => skillsFor(KANA_BY_CHAR[c]).includes(sk));
-      return buildQuestion(c, options[Math.floor(Math.random() * options.length)] ?? 'read', canSpeak, known);
+      return buildQuestion(c, options[Math.floor(Math.random() * options.length)] ?? 'read', canSpeak, known, s.confusions);
     });
     switch (mode) {
       case 'review': {
         const now = Date.now();
         const due = Object.values(s.cards).filter((c) => c.char in s.learned && isDue(c, now)).sort((a, b) => a.due - b.due).slice(0, 30);
-        return shuffle(due).map((c) => buildQuestion(c.char, c.skill, canSpeak, new Set(Object.keys(s.learned))));
+        return shuffle(due).map((c) => buildQuestion(c.char, c.skill, canSpeak, new Set(Object.keys(s.learned)), s.confusions));
       }
       case 'quiz': return pick(['read', 'recall']);
       case 'listen': return pick(['listen']);
       case 'write': return pick(['write'], 8);
       case 'speed': return Array.from({ length: 6 }, () => pick(['read'])).flat();
+      case 'mixups': return buildConfusionQuiz(s.confusions);
       case 'lookalike': return buildLookalikeQuiz(new Set(scope === 'all' ? KANA.map((k) => k.char) : pool));
       case 'words': {
         const known = scope === 'all' ? WORDS : wordsFor(new Set(Object.keys(s.learned)));
@@ -103,7 +105,9 @@ export function Practice({ mode }: { mode?: Mode }) {
         <div className="topbar"><button className="icon-btn" onClick={() => go('/practice')}>‹</button><h1>{title}</h1></div>
         <div className="card center">
           <div style={{ fontSize: '3rem' }}>{mode === 'review' ? '🎉' : '📚'}</div>
-          <p>{mode === 'review' ? 'Nothing is due right now. Come back later, or try another mode.' : 'Nothing to practise with these filters yet. Learn a few more kana or switch to "All".'}</p>
+          <p>{mode === 'review' ? 'Nothing is due right now. Come back later, or try another mode.'
+            : mode === 'mixups' ? 'No mix-ups yet. When you confuse two kana in a quiz, they show up here so you can drill them.'
+            : 'Nothing to practise with these filters yet. Learn a few more kana or switch to "All".'}</p>
           <a className="btn primary" href="#/practice">Back</a>
         </div>
       </div>
@@ -116,7 +120,7 @@ export function Practice({ mode }: { mode?: Mode }) {
       questions={questions}
       mode={`practice:${mode}`}
       timeLimit={mode === 'speed' ? 60 : undefined}
-      record={mode !== 'speed' && (scope === 'learned' || mode === 'review')}
+      record={mode !== 'speed' && (scope === 'learned' || mode === 'review' || mode === 'mixups')}
       onExit={() => go('/practice')}
       onFinish={setAnswers}
     />

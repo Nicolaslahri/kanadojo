@@ -14,7 +14,7 @@ import { Settings } from './screens/Settings';
 import { Pin } from './screens/Pin';
 
 export function App() {
-  const [page = '', param] = useRoute();
+  const [page = '', param, sub] = useRoute();
   const theme = useStore((s) => s.settings.theme);
   const status = useStore((s) => s.syncStatus);
 
@@ -31,7 +31,7 @@ export function App() {
   let screen;
   switch (page) {
     case 'learn': screen = <Learn />; break;
-    case 'lesson': screen = <Lesson key={param} id={param} />; break;
+    case 'lesson': screen = <Lesson key={`${param}/${sub ?? ''}`} id={param} writing={sub === 'write'} />; break;
     case 'practice': screen = <Practice key={param ?? ''} mode={practiceMode} />; break;
     case 'test': screen = <DailyTest />; break;
     case 'chart': screen = <Chart />; break;

@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { KANA_BY_CHAR } from '../data/kana';
 import { questionSkill, type Question } from '../lib/questions';
-import { recordAnswer } from '../lib/store';
+import { kanaForRomaji, romajiMatches } from '../lib/romaji';
+import { cardKey } from '../lib/srs';
+import { getState, recordAnswer } from '../lib/store';
 import { buzz } from '../lib/haptics';
 import { FreePad } from './DrawPad';
 import { useSpeaker } from './Audio';
@@ -10,6 +12,28 @@ import { Ring } from './Ring';
 export interface Answer {
   q: Question;
   correct: boolean;
+  /** A second try at something missed earlier in the same session; not part of the score. */
+  retry?: boolean;
+}
+
+interface Item {
+  q: Question;
+  retry: boolean;
+  /** Type the answer instead of picking it. */
+  typed: boolean;
+}
+
+/** A missed question comes back this many questions later. */
+const RETRY_GAP = 3;
+/** Correct answers slower than this count as half-known. */
+const SLOW_MS: Partial<Record<Question['type'], number>> = { read: 4500, recall: 5000, listen: 6000, word: 8000 };
+const SLOW_TYPED_MS = 7000;
+
+/** Typing is used for reading questions about kana you've already answered at least once. */
+function shouldType(q: Question, timed: boolean) {
+  if (timed || q.type !== 'read') return false;
+  const s = getState();
+  return s.settings.typing && (s.cards[cardKey(q.char, 'read')]?.correct ?? 0) > 0;
 }
 
 interface Props {
@@ -24,13 +48,18 @@ interface Props {
 }
 
 export function Quiz({ questions, mode, onFinish, onExit, timeLimit, record = true }: Props) {
+  const [items, setItems] = useState<Item[]>(() => questions.map((q) => ({ q, retry: false, typed: shouldType(q, !!timeLimit) })));
   const [i, setI] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
+  const [typed, setTyped] = useState('');
   const [verdict, setVerdict] = useState<boolean | null>(null);
+  const [slow, setSlow] = useState(false);
   const [left, setLeft] = useState(timeLimit ?? 0);
   const answers = useRef<Answer[]>([]);
+  const shownAt = useRef(Date.now());
   const { canSpeak, say } = useSpeaker();
-  const q = questions[i];
+  const item = items[i];
+  const q = item?.q;
   const finished = useRef(false);
 
   const finish = () => {
@@ -53,6 +82,7 @@ export function Quiz({ questions, mode, onFinish, onExit, timeLimit, record = tr
   }, [timeLimit]);
 
   useEffect(() => {
+    shownAt.current = Date.now();
     if (q?.type === 'listen' && canSpeak) {
       const t = setTimeout(() => say(q.char), 300);
       return () => clearTimeout(t);
@@ -61,29 +91,57 @@ export function Quiz({ questions, mode, onFinish, onExit, timeLimit, record = tr
 
   if (!q) return null;
 
-  const answer = (correct: boolean) => {
+  const answer = (correct: boolean, pickedChar?: string) => {
+    const limit = item.typed ? SLOW_TYPED_MS : SLOW_MS[q.type];
+    const isSlow = correct && !timeLimit && !item.retry && !!limit && Date.now() - shownAt.current > limit;
     setVerdict(correct);
-    answers.current.push({ q, correct });
+    setSlow(isSlow);
+    answers.current.push({ q, correct, retry: item.retry });
     const skill = questionSkill(q);
-    if (record && skill && 'char' in q) recordAnswer(q.char, skill, correct, mode);
+    // A retry is extra practice: the first miss already scheduled the card.
+    if (record && skill && 'char' in q && !item.retry) recordAnswer(q.char, skill, correct, mode, { slow: isSlow, picked: pickedChar });
+    if (!correct && !timeLimit && !item.retry) {
+      setItems((list) => {
+        const copy = [...list];
+        copy.splice(Math.min(i + 1 + RETRY_GAP, copy.length), 0, { q, retry: true, typed: item.typed });
+        return copy;
+      });
+    }
     if (correct) buzz(12);
     else buzz([40, 50, 40]);
     if (q.type === 'word') say(q.word.kana);
     else if (!correct || q.type === 'read') say(q.char);
-    if (correct && (timeLimit || q.type !== 'write')) setTimeout(next, timeLimit ? 350 : 750);
+    if (correct && !isSlow && (timeLimit || q.type !== 'write')) setTimeout(next, timeLimit ? 350 : 750);
+  };
+
+  /** Which kana the learner actually chose, so mix-ups can be drilled later. */
+  const pickedKana = (opt: string) => {
+    if (!('char' in q)) return undefined;
+    if (q.type === 'recall' || q.type === 'listen') return opt;
+    return kanaForRomaji(opt, KANA_BY_CHAR[q.char].script)?.char;
   };
 
   const pick = (opt: string) => {
     if (verdict !== null) return;
     setPicked(opt);
-    answer(opt === ('answer' in q ? q.answer : ''));
+    const correct = opt === ('answer' in q ? q.answer : '');
+    answer(correct, correct ? undefined : pickedKana(opt));
+  };
+
+  const submitTyped = (e: FormEvent) => {
+    e.preventDefault();
+    if (verdict !== null || !typed.trim() || !('answer' in q)) return;
+    const correct = romajiMatches(typed, q.answer);
+    answer(correct, correct ? undefined : pickedKana(typed));
   };
 
   const next = () => {
     setPicked(null);
+    setTyped('');
     setVerdict(null);
+    setSlow(false);
     setI((n) => {
-      if (n + 1 >= questions.length) {
+      if (n + 1 >= items.length) {
         setTimeout(finish, 0);
         return n;
       }
@@ -105,16 +163,17 @@ export function Quiz({ questions, mode, onFinish, onExit, timeLimit, record = tr
           </>
         ) : (
           <>
-            <div className="progress"><div style={{ width: `${(i / questions.length) * 100}%` }} /></div>
-            <span className="muted small">{i + 1}/{questions.length}</span>
+            <div className="progress"><div style={{ width: `${(i / items.length) * 100}%` }} /></div>
+            <span className="muted small">{i + 1}/{items.length}</span>
           </>
         )}
       </div>
 
       <div key={i}>
+        {item.retry && <div className="retry-tag">🔁 One more try</div>}
         {q.type === 'read' && (
           <div className="prompt">
-            <div className="label">How do you read this?</div>
+            <div className="label">{item.typed ? 'Type how you read this' : 'How do you read this?'}</div>
             <div className="glyph kana">{q.char}</div>
           </div>
         )}
@@ -152,7 +211,31 @@ export function Quiz({ questions, mode, onFinish, onExit, timeLimit, record = tr
           </>
         )}
 
-        {'options' in q && (
+        {item.typed && 'answer' in q && (
+          <form className="typed-answer" onSubmit={submitTyped}>
+            <input
+              className={verdict === null ? '' : verdict ? 'correct' : 'wrong'}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder="romaji, e.g. ka"
+              aria-label="Your answer in romaji"
+              autoFocus
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="done"
+              disabled={verdict !== null}
+            />
+            <button className="btn primary" disabled={verdict !== null || !typed.trim()}>Check</button>
+            <button type="button" className="btn sm ghost" disabled={verdict !== null}
+              onClick={() => setItems((list) => list.map((it, n) => (n === i ? { ...it, typed: false } : it)))}>
+              Show choices
+            </button>
+          </form>
+        )}
+
+        {'options' in q && !item.typed && (
           <div className="options">
             {q.options.map((opt) => {
               const isAnswer = opt === q.answer;
@@ -168,10 +251,14 @@ export function Quiz({ questions, mode, onFinish, onExit, timeLimit, record = tr
         )}
       </div>
 
-      {verdict !== null && !(verdict && (timeLimit || q.type !== 'write')) && (
+      {verdict !== null && !(verdict && !slow && (timeLimit || q.type !== 'write')) && (
         <div className={`feedback ${verdict ? '' : 'bad'}`}>
           <div className="inner">
-            <div className={`verdict ${verdict ? 'good' : 'bad'}`}>{verdict ? 'Correct!' : 'Not quite'}</div>
+            <div className={`verdict ${verdict ? 'good' : 'bad'}`}>
+              {!verdict ? 'Not quite' : slow ? 'Correct, but slow' : 'Correct!'}
+            </div>
+            {slow && <div className="muted small" style={{ marginBottom: 6 }}>It'll come back a bit sooner so it gets automatic.</div>}
+            {!verdict && !timeLimit && !item.retry && <div className="muted small" style={{ marginBottom: 6 }}>You'll see this one again in a moment.</div>}
             {q.type === 'word' ? (
               <div className="answer-line">
                 <span style={{ fontSize: '2rem' }}>{q.word.emoji}</span>
@@ -199,10 +286,12 @@ export function Quiz({ questions, mode, onFinish, onExit, timeLimit, record = tr
 
 const SKILL_ICON: Record<string, string> = { read: '👀', recall: '🧠', listen: '👂', write: '✍️', word: '📖' };
 
-export function Results({ answers, title, children }: { answers: Answer[]; title: string; children?: ReactNode }) {
+export function Results({ answers: all, title, children }: { answers: Answer[]; title: string; children?: ReactNode }) {
+  const answers = all.filter((a) => !a.retry);
   const right = answers.filter((a) => a.correct).length;
   const pct = answers.length ? right / answers.length : 0;
   const mistakes = answers.filter((a) => !a.correct);
+  const fixed = all.filter((a) => a.retry && a.correct).length;
   const { canSpeak, say } = useSpeaker();
   const msg = pct === 1 ? 'Perfect! 🌸' : pct >= 0.8 ? 'Great job! 🎉' : pct >= 0.5 ? 'Good effort — keep going 💪' : 'Every mistake is practice 🌱';
   return (
@@ -214,6 +303,7 @@ export function Results({ answers, title, children }: { answers: Answer[]; title
         </Ring>
       </div>
       <p className="center" style={{ fontWeight: 650 }}>{msg}</p>
+      {fixed > 0 && <p className="center muted small">🔁 {fixed} {fixed === 1 ? 'miss' : 'misses'} fixed on the second try</p>}
       {children}
       {mistakes.length > 0 && (
         <div className="card">

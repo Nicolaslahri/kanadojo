@@ -6,9 +6,13 @@ A mobile-first web app for learning **hiragana** and **katakana**, made to self-
 - **Stroke order.** Animated, numbered strokes for all 150 kana, using KanjiVG data.
 - **Writing practice.** You trace over a guide stroke by stroke, then draw from memory. The app grades your shape, stroke count, stroke order and direction, and tells you what went wrong ("stroke 2 goes the wrong way").
 - **Pronunciation.** Each kana is spoken by a native Japanese voice (normal or slow). You can record yourself and play both back to compare. Tricky sounds (ふ, つ, the R row, ん…) come with tips.
-- **Lessons.** Lessons go row by row: meet → watch → trace → draw → mini quiz. Basics come first, then dakuten (が, ぱ…), then combinations (きゃ, しゅ…).
+- **Lessons.** Lessons go row by row: meet → watch → trace → draw → mini quiz → a few real words that use the new kana. Basics come first, then dakuten (が, ぱ…), then combinations (きゃ, しゅ…).
+- **Fast track (on by default).** Lessons teach reading only, so you can get through all of hiragana in a day or two. Writing is a separate pass: tap ✍️ on a finished lesson. Writing questions only show up in tests once you've started writing that kana. Turn it off in Learn or Settings to learn both together.
+- **Katakana through hiragana.** Each katakana shows its hiragana twin with the same sound, and points out the ones that look almost the same (カ/か, リ/り, ヘ/へ…).
 - **Daily test.** 20 questions a day mixing reading, recall, listening and writing. Kana that are due for review and the ones you miss most come first. Your streak counts the days you practise 🔥.
-- **Spaced repetition.** Each kana is tracked separately for reading, recall, listening and writing (Leitner boxes, 1 → 30 day intervals).
+- **Spaced repetition.** Each kana is tracked separately for reading, recall, listening and writing (Leitner boxes, 1 → 30 day intervals). A miss comes back three questions later in the same session. A correct but slow answer counts as half-known: the card stays in its box instead of moving up.
+- **Typed answers.** Once you've read a kana correctly, reading questions ask you to type the romaji instead of picking from four. Other spellings are accepted (si/shi, tu/tsu, hu/fu, sya/sha…). There's a "Show choices" escape hatch and a setting to turn it off.
+- **Your own mix-ups.** Every wrong pick is remembered (synced to the server). Those kana show up as distractors more often, and Practice → My mix-ups drills the pairs you personally confuse most.
 - **Extra practice modes.** Flashcards, quick quiz, listening, writing, real words (ねこ, すし, カメラ…), a look-alikes drill (シ/ツ, ソ/ン, ぬ/め…), and a 60-second speed round.
 - **Chart and stats.** A full gojūon chart coloured by mastery, a 30-day activity heatmap, test history, accuracy per skill, and your weakest kana.
 - **Sync and offline.** Progress is stored in SQLite on your server and syncs across phone, tablet and PC. The app is an installable PWA that keeps working offline and syncs when you're back.
@@ -66,7 +70,11 @@ For daily reminders, open ⚙️ Settings → **Daily reminder** from the instal
 
 ### Japanese voice
 
-Pronunciation uses your device's built-in text-to-speech. Most phones already have a Japanese voice. If the app says none was found:
+Pronunciation uses recorded clips when the app has them, and your device's built-in text-to-speech otherwise.
+
+**Recorded clips.** Put MP3s in `web/public/audio/`, named after the text's Unicode code points in hex (あ → `3042.mp3`, きゃ → `304d-3083.mp3`), then run `npm run audio` to update `clips.json`. Clips are used whenever they exist, so pronunciation also works on devices without a Japanese voice.
+
+Without clips, the app uses your device's built-in text-to-speech. Most phones already have a Japanese voice. If the app says none was found:
 
 - **iPhone:** Settings → Accessibility → Spoken Content → Voices → Japanese (Kyoko or Otoya; the "Enhanced" versions sound best).
 - **Android:** Settings → Text-to-speech → Google → Install voice data → Japanese.
@@ -96,6 +104,7 @@ npm run dev          # Vite dev server with hot reload, proxies /api to :8080
 | `npm run e2e` | Plays through a lesson and a daily test in headless Chromium on a phone-sized screen, then checks that progress syncs back from the server. Set `CHROMIUM_PATH` if Chromium isn't found. |
 | `npm run strokes` | Regenerates `web/src/data/strokes.json` from KanjiVG. |
 | `npm run icons` | Renders the PNG app icons from `web/public/icon.svg`. |
+| `npm run audio` | Lists the recorded clips in `web/public/audio` in `clips.json`. |
 
 ### Project layout
 

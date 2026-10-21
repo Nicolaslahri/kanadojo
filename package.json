@@ -13,6 +13,7 @@
     "test": "vitest run",
     "typecheck": "tsc -p web/tsconfig.json && tsc -p server/tsconfig.json --noEmit",
     "icons": "node scripts/build-icons.mjs",
+    "audio": "node scripts/build-audio-index.mjs",
     "e2e": "node tests/e2e/run.mjs"
   },
   "engines": {

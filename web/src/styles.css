@@ -627,3 +627,35 @@ a { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* Typed answers */
+.typed-answer { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 6px; }
+.typed-answer input {
+  flex: 1 1 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  font: inherit;
+  font-size: 1.6rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  outline: none;
+}
+.typed-answer input:focus { border-color: var(--accent); }
+.typed-answer input.correct { border-color: var(--good); background: var(--good-soft); }
+.typed-answer input.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.typed-answer .btn.primary { flex: 1; }
+
+.retry-tag { text-align: center; color: var(--ink-3); font-weight: 650; font-size: 0.8rem; margin-bottom: 4px; }
+
+/* Katakana ↔ hiragana twin */
+.twin { display: flex; align-items: center; gap: 10px; justify-content: center; margin: 0 auto 12px; padding: 8px 14px; border-radius: 14px; background: var(--surface-2); max-width: 34ch; font-size: 0.9rem; }
+.twin .kana { font-size: 1.6rem; }
+
+.lesson-item .write-pass { font-size: 0.8rem; padding: 6px 10px; }
+.typed-answer input::placeholder { font-weight: 500; font-size: 1.1rem; color: var(--ink-3); }

@@ -1,4 +1,4 @@
-// Japanese text-to-speech through the browser's built-in voices.
+// Japanese pronunciation: recorded clips when the app ships them, otherwise the browser's built-in voices.
 
 const PREFERRED = ['Kyoko', 'Otoya', 'O-ren', 'Hattori', 'Google 日本語', 'Nanami', 'Haruka', 'Ayumi', 'Ichiro', 'Sayaka'];
 
@@ -18,7 +18,26 @@ if (supported) {
   speechSynthesis.addEventListener?.('voiceschanged', refresh);
 }
 
-export const speechSupported = () => supported;
+// Recorded clips live in public/audio as <code points>.mp3 (あ → 3042.mp3, きゃ → 304d-3083.mp3),
+// listed in audio/clips.json. They work on devices without a Japanese voice.
+const AUDIO_BASE = `${import.meta.env.BASE_URL ?? '/'}audio/`;
+let clips = new Set<string>();
+
+export const clipName = (text: string) => [...text].map((c) => c.codePointAt(0)!.toString(16)).join('-');
+
+if (typeof window !== 'undefined' && typeof fetch === 'function') {
+  fetch(`${AUDIO_BASE}clips.json`)
+    .then((r) => (r.ok ? r.json() : []))
+    .then((list: string[]) => {
+      clips = new Set(list);
+      listeners.forEach((l) => l());
+    })
+    .catch(() => undefined);
+}
+
+const hasClip = (text: string) => clips.has(clipName(text));
+
+export const speechSupported = () => supported || clips.size > 0;
 
 export function japaneseVoices() {
   return voices;
@@ -43,13 +62,24 @@ export function pickVoice(voiceURI: string | null): SpeechSynthesisVoice | undef
 }
 
 export function hasJapaneseVoice() {
-  return voices.length > 0;
+  return voices.length > 0 || clips.size > 0;
 }
+
+let clipPlayer: HTMLAudioElement | null = null;
 
 // Some engines read lone kana by their name or mumble them, so a few need a nudge.
 const SPOKEN: Record<string, string> = { を: 'お', ヲ: 'オ', ぢ: 'じ', ヂ: 'ジ', づ: 'ず', ヅ: 'ズ' };
 
 export function speak(text: string, opts: { rate?: number; voiceURI?: string | null } = {}) {
+  clipPlayer?.pause();
+  if (hasClip(text)) {
+    if (supported) speechSynthesis.cancel();
+    clipPlayer = new Audio(`${AUDIO_BASE}${clipName(text)}.mp3`);
+    // Clips are recorded at natural speed; the app's default rate of 0.8 maps to normal playback.
+    clipPlayer.playbackRate = Math.min(1.5, Math.max(0.5, (opts.rate ?? 0.8) / 0.8));
+    void clipPlayer.play().catch(() => undefined);
+    return;
+  }
   if (!supported) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(SPOKEN[text] ?? text);

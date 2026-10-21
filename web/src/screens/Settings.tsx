@@ -67,6 +67,8 @@ export function Settings() {
       <h3 className="section-title">Learning</h3>
       <div className="card">
         <Toggle label="Show romaji in the chart" value={settings.romaji} onChange={(v) => updateSettings({ romaji: v })} />
+        <Toggle label="Type answers" hint="Type the romaji for kana you've already met, instead of picking from four" value={settings.typing} onChange={(v) => updateSettings({ typing: v })} />
+        <Toggle label="Fast track" hint="Lessons teach reading first; writing is a separate pass" value={settings.fastTrack} onChange={(v) => updateSettings({ fastTrack: v })} />
         <Toggle label="Unlock all lessons" hint="Skip ahead if you already know some kana" value={settings.unlockAll} onChange={(v) => updateSettings({ unlockAll: v })} />
         <Toggle label="Vibration" hint="Small buzz on right and wrong answers" value={settings.haptics} onChange={(v) => updateSettings({ haptics: v })} />
         <div className="setting">

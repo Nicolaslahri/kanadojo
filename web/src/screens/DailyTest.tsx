@@ -26,11 +26,12 @@ export function DailyTest() {
         onExit={() => go('/')}
         onFinish={(a) => {
           setAnswers(a);
+          const scored = a.filter((x) => !x.retry);
           saveTest(day, {
-            score: a.filter((x) => x.correct).length,
-            total: a.length,
+            score: scored.filter((x) => x.correct).length,
+            total: scored.length,
             at: Date.now(),
-            details: a.flatMap((x) => (x.q.type === 'word' ? [] : [{ char: x.q.char, skill: x.q.type, correct: x.correct }])),
+            details: scored.flatMap((x) => (x.q.type === 'word' ? [] : [{ char: x.q.char, skill: x.q.type, correct: x.correct }])),
           });
         }}
       />
@@ -105,7 +106,10 @@ export function DailyTest() {
           {canSpeak && <span className="chip">👂 Listening</span>}
           <span className="chip">✍️ Writing</span>
         </div>
-        <button className="btn primary block" onClick={() => setQuestions(buildDailyTest(s.cards, learned, canSpeak))}>Start</button>
+        <button className="btn primary block" onClick={() => setQuestions(buildDailyTest(s.cards, learned, canSpeak, Date.now(), {
+          writingStartedOnly: s.settings.fastTrack,
+          confusions: s.confusions,
+        }))}>Start</button>
       </div>
     </div>
   );

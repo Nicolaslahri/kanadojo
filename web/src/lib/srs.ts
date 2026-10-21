@@ -35,9 +35,13 @@ export function newCard(char: string, skill: Skill, now: number): Card {
   return { char, skill, box: 0, due: now, correct: 0, wrong: 0, updated: now };
 }
 
-export function review(card: Card, correct: boolean, now: number): Card {
+/**
+ * A slow but correct answer counts as half-known: the card doesn't move up a box,
+ * so it comes back on its current schedule instead of being pushed further out.
+ */
+export function review(card: Card, correct: boolean, now: number, slow = false): Card {
   if (correct) {
-    const box = Math.min(MAX_BOX, card.box + 1);
+    const box = slow ? Math.max(1, card.box) : Math.min(MAX_BOX, card.box + 1);
     return { ...card, box, due: now + INTERVAL_DAYS[box] * DAY, correct: card.correct + 1, updated: now };
   }
   return { ...card, box: Math.min(card.box, 1), due: now + RETRY_MS, wrong: card.wrong + 1, updated: now };
