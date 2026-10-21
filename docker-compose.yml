@@ -1,0 +1,18 @@
+services:
+  kana-dojo:
+    build: .
+    image: kana-dojo:latest
+    container_name: kana-dojo
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Optional: require a PIN before anyone can see or change progress.
+      APP_PIN: ""
+      # Contact address sent with push notifications (required format for Apple/Google push).
+      VAPID_SUBJECT: "mailto:you@example.com"
+    volumes:
+      - kana-data:/data
+
+volumes:
+  kana-data:

@@ -1,0 +1,8 @@
+node_modules
+dist
+server/dist
+data
+scripts/.cache
+tests/e2e/screenshots
+.git
+*.log

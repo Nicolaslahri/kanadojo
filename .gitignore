@@ -1,0 +1,9 @@
+node_modules/
+dist/
+server/dist/
+data/
+scripts/.cache/
+tests/e2e/screenshots/
+*.log
+.DS_Store
+.env
